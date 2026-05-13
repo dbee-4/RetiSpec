@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RetiSpec | AI-Powered DR Grading</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <h1>🔬 RetiSpec</h1>
+            <p>Automated Diabetic Retinopathy Grading & Explainability</p>
+        </div>
+    </header>
+
+    <main>
+        <section class="card upload-card">
+            <div class="card-header">
+                <h2>1. Fundus Image Upload</h2>
+                <p>Select a retinal fundus image to generate an explainable AI diagnostic report.</p>
+            </div>
+            
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                    <p>Drag & Drop or <span class="browse-label">Browse</span></p>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                </div>
+            </div>
+            
+
+            <div id="previewContainer" class="hidden">
+                <img id="previewImg" class="preview-img" src="" alt="Preview">
+                <button id="analyzeBtn" class="btn btn-primary">Run Diagnostic Analysis</button>
+            </div>
+        </section>
+
+        <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <p>Processing via ConvNeXt-Tiny backbone...</p>
+            <small>Generating Grad-CAM++ heatmaps</small>
+        </div>
+
+        <section class="card results-card hidden" id="results">
+            <div class="card-header">
+                <h2>2. Diagnostic Report</h2>
+            </div>
+
+            <div class="result-banner" id="resultBanner">
+                <div class="res-info">
+                    <h3 id="resultLabel">--</h3>
+                    <p id="resultDescription">--</p>
+                    <p id="englishExplanation" style="margin-top: 10px; font-style: italic; color: #555; background: #f9fafb; padding: 10px; border-radius: 6px; border-left: 3px solid #3b82f6;">--</p>
+                </div>
+                <div class="res-metric">
+                    <span class="metric-label">Confidence</span>
+                    <span id="resultConfidence" class="metric-value">0%</span>
+                </div>
+            </div>
+
+            <div class="visualization-grid">
+                <div class="vis-block">
+                    <h4>Preprocessed Input</h4>
+                    <img id="origImg" src="" alt="Original">
+                </div>
+                <div class="vis-block">
+                    <h4>Grad-CAM++ Attention</h4>
+                    <img id="camImg" src="" alt="Heatmap">
+                    <p class="caption">Hot zones indicate regions driving the classification.</p>
+                </div>
+                <div class="vis-block">
+                    <h4>Gradient x input</h4>
+                    <img id="shapImg" src="" alt="SHAP Overlay">
+                    <p class="caption">Pixel-level feature importance.</p>
+                </div>
+            </div>
+
+            <div class="prob-section">
+                <h4>Class Distribution</h4>
+                <div id="probBars">
+                    </div>
+            </div>
+
+        </section>
+    </main>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
