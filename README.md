@@ -100,10 +100,6 @@ RetiSpec/
 ├── templates/
 │   └── index.html
 │
-├── outputs/
-│   └── models/
-│       └── optimized_thresholds.pkl
-│
 ├── app.py
 ├── config.py
 ├── dataset.py
