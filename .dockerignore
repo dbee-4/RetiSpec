@@ -8,5 +8,7 @@ __pycache__/
 output_screenshot/
 datasets_00/
 outputs/
+models/last_model.pth
+test images/
 *.log
 

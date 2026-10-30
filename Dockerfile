@@ -3,11 +3,13 @@
 # ==============================================================================
 FROM python:3.10-slim
 
-# Prevent Python from writing .pyc files and enable unbuffered logging
+# Prevent Python from writing .pyc files and limit thread pools for <512MB RAM environments
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    OMP_NUM_THREADS=4 \
-    MKL_NUM_THREADS=4
+    OMP_NUM_THREADS=2 \
+    MKL_NUM_THREADS=2 \
+    OPENBLAS_NUM_THREADS=2 \
+    NUMEXPR_NUM_THREADS=2
 
 WORKDIR /app
 

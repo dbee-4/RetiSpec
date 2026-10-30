@@ -63,15 +63,22 @@ SEVERITY_DESC = [
 ]
 
 # ── Model & XAI State ─────────────────────────────────────────────────────────
+import gc
 device = cfg.DEVICE
-print(f"[RetiSpec] Initializing on compute device: {device}")
+torch.set_num_threads(2)
+print(f"[RetiSpec] Initializing on compute device: {device} (threads limited to 2 for memory efficiency)")
 
 # 1. PyTorch Model Initialization
 pytorch_model = build_model(pretrained=False, device=device)
 if os.path.exists(cfg.BEST_MODEL_PATH):
     checkpoint = torch.load(cfg.BEST_MODEL_PATH, map_location=device)
-    state_dict = checkpoint.get("ema_state", checkpoint.get("model_state", checkpoint))
+    if isinstance(checkpoint, dict):
+        state_dict = checkpoint.get("ema_state", checkpoint.get("model_state", checkpoint.get("model_state_dict", checkpoint)))
+    else:
+        state_dict = checkpoint
     pytorch_model.load_state_dict(state_dict)
+    del checkpoint, state_dict
+    gc.collect()
     print(f"[RetiSpec] Loaded PyTorch model from {cfg.BEST_MODEL_PATH}")
 else:
     print(f"[RetiSpec] Warning: Checkpoint not found at {cfg.BEST_MODEL_PATH}")
@@ -87,11 +94,18 @@ if os.path.exists(cfg.ONNX_MODEL_PATH):
     try:
         import onnxruntime as ort
         sess_opts = ort.SessionOptions()
-        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_opts.enable_cpu_mem_arena = False
+        sess_opts.intra_op_num_threads = 2
+        sess_opts.inter_op_num_threads = 1
+        sess_opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
         onnx_session = ort.InferenceSession(cfg.ONNX_MODEL_PATH, sess_opts, providers=["CPUExecutionProvider"])
         print(f"[RetiSpec] Loaded ONNX Runtime engine from {cfg.ONNX_MODEL_PATH}")
     except Exception as e:
         print(f"[RetiSpec] ONNX Runtime could not be initialized: {e}")
+
+# Trigger clean garbage collection after loading
+gc.collect()
 
 # 4. Optimized Thresholds
 OPTIMIZED_THRESHOLDS = None
