@@ -109,7 +109,4 @@ Access the application immediately at `http://localhost:8000`.
 
 ---
 
-## ⚖️ Disclaimer: Research & Educational Purpose Only
-
-> **Important Notice:**
-> This software is developed strictly for **academic research, educational demonstrations, and algorithmic benchmarking**. It is **not** certified as a medical device by any healthcare regulatory body (e.g., FDA, CE, EMA). It must **not** be used as a primary diagnostic tool, clinical decision system, or treatment guidance mechanism in real-world clinical practice without independent evaluation and validation by certified medical professionals.
+## 📌 Research & Educational Purpose Only
