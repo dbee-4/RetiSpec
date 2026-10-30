@@ -1,100 +1,115 @@
 # RetiSpec 👁️
+### Explainable AI-Based Diabetic Retinopathy Detection System
 
-### Explainable AI-Based Diabetic Retinopathy Detection System (FastAPI & ONNX)
-
-## 📌 Overview
-
-**RetiSpec** is a medical deep learning system designed for automated grading and clinical interpretability of Diabetic Retinopathy (DR) from retinal fundus images.
-
-The model classifies fundus photographs into 5 clinical severity stages according to the International Clinical Diabetic Retinopathy Disease Severity Scale:
-1. **No DR** (Grade 0)
-2. **Mild** (Grade 1 - Microaneurysms only)
-3. **Moderate** (Grade 2 - Microaneurysms, hemorrhages, hard exudates)
-4. **Severe** (Grade 3 - 4-2-1 rule: hemorrhages, venous beading, IRMA)
-5. **Proliferative DR** (Grade 4 - Neovascularization or vitreous/preretinal hemorrhage)
-
-RetiSpec leverages **ConvNeXt-Tiny** as its core vision backbone, complemented by specialized retinal preprocessing, decision threshold optimization, Test-Time Augmentation (TTA), high-throughput **ONNX Runtime** acceleration on CPU, and dual **Explainable AI (XAI)** visualizations.
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
+[![PyTorch](https://img.shields.io/badge/Framework-PyTorch%20CPU-EE4C2C.svg)](https://pytorch.org/)
+[![ONNX Runtime](https://img.shields.io/badge/Inference-ONNX%20Runtime%20(<100ms)-005CED.svg)](https://onnxruntime.ai/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🚀 Key Features & Updates
+## ⚡ 30-Second Summary for Recruiters & Reviewers
 
-* **FastAPI Backend:** Modern asynchronous REST API with auto-generated OpenAPI / Swagger docs at `/docs`.
-* **ONNX Runtime Acceleration:** Exported `.pth` checkpoint to `.onnx` (`models/best_model.onnx`), delivering **>2x faster CPU inference** (latency reduced from ~196 ms to ~95 ms).
-* **CPU-Friendly Optimization:** Built-in auto-detection for CPU environments with offline checkpoint loading (no Hugging Face runtime downloads).
-* **Dual Explainable AI (XAI):**
-  - **Grad-CAM++:** Generalized gradient-weighted class activation mapping targeting the final ConvNeXt block to identify macro lesion clusters.
-  - **Gradient × Input:** Direct input saliency attribution ($\left| x \odot \frac{\partial y_c}{\partial x} \right|$) with Gaussian smoothing and retinal masking for fine-grained pixel sensitivity (completely replacing heavy SHAP/Numba).
-* **Domain-Specific Preprocessing:** Ben Graham's color constancy method, circular ROI cropping, aspect-ratio-preserving padding, and CLAHE contrast enhancement.
-* **Docker & Docker Compose:** Containerized CPU-optimized deployment in a single command.
-* **Interactive Web Interface:** Glassmorphism UI with real-time fundus preview, probability distribution bars, and diagnostic reports.
+**RetiSpec** is a complete, production-grade medical computer vision system that classifies retinal fundus photographs into 5 diabetic retinopathy severity stages while providing clinicians with dual, real-time Explainable AI (XAI) attribution maps.
+
+* **Clinical Goal:** Automate detection of Diabetic Retinopathy (DR)—the leading cause of preventable adult blindness—grading images into **No DR**, **Mild**, **Moderate**, **Severe**, or **Proliferative DR**.
+* **Vision Backbone:** **ConvNeXt-Tiny** fine-tuned with domain-specific retinal preprocessing (Ben Graham's color constancy, circular ROI cropping, and LAB-space CLAHE).
+* **Dual Explainable AI (XAI):** Solves the medical "black box" dilemma by generating two distinct visual interpretations for every diagnosis:
+  1. **Grad-CAM++:** Highlights macro lesion clusters and diseased regions across deep feature maps.
+  2. **Gradient × Input:** Fine-grained pixel-level attribution mapping subtle microaneurysms, cotton wool spots, and hemorrhages.
+* **Production Engineering:**
+  * **FastAPI Backend:** Asynchronous REST API serving web UI and OpenAPI docs (`/docs`).
+  * **ONNX Runtime Acceleration:** Pre-converted ONNX model (`models/best_model.onnx`) cuts CPU inference latency from **~196 ms down to ~95 ms** (>2× speedup).
+  * **Automated TTA:** 6-fold Test-Time Augmentation (safe horizontal flips, micro-rotations, and brightness jitter) runs on every image for robust, invariant predictions.
+  * **Zero Cloud GPU Requirement:** Fully optimized to run locally on standard CPU hardware or inside Docker.
 
 ---
 
-## 📁 File Structure & Concepts Used
+## 🔬 Diagnostic Visual Pipeline
 
-| File | Primary Role | Core Concepts & Techniques Used |
+When a retinal fundus image is uploaded, RetiSpec executes a 3-step diagnostic pipeline:
+
+```text
+Fundus Image ──► Preprocessing ──► ConvNeXt-Tiny + TTA ──► Dual Explainable AI ──► Clinical Report
+                 (Ben Graham +      (PyTorch / ONNX)       (Grad-CAM++ &           (Class Probs &
+                  Circular Crop)                            Gradient × Input)       Confidence)
+```
+
+| Visual Output | Method | Clinical Purpose |
 | :--- | :--- | :--- |
-| [`preprocessing.py`](file:///E:/RetiSpec/preprocessing.py) | Retinal Image Pipeline | **Ben Graham's Technique** (unsharp masking via local average subtraction), **CLAHE** (Contrast Limited Adaptive Histogram Equalization in LAB space), **Circular ROI Cropping** (black border removal), **Aspect-Ratio-Preserving Padding**, ImageNet normalization, Albumentations Compose pipeline. |
-| [`model.py`](file:///E:/RetiSpec/model.py) | Architecture & Weights | **ConvNeXt-Tiny** backbone ($7\times 7$ depthwise convolutions, inverted bottleneck, LayerNorm in channels-last, GELU activations, Stochastic Depth / drop-path rate), Global Average Pooling, custom 2-layer classification head ($768 \rightarrow 256 \rightarrow 5$) with **Truncated Normal** weight initialization. |
-| [`config.py`](file:///E:/RetiSpec/config.py) | Central Configuration | Hardware auto-detection (`cpu` vs `cuda`), path resolution with fallback, discriminative learning rates, class sampler exponent, EMA decay rate, early stopping patience. |
-| [`tta.py`](file:///E:/RetiSpec/tta.py) | Test-Time Augmentation | **Ensemble TTA**: 6 anatomically safe perturbations (identity, horizontal flip, $\pm 5^\circ$ rotations, $\pm 5\%$ brightness jitter; vertical flips avoided to preserve optic disc orientation), soft-voting probability averaging, CPU/CUDA dynamic autocast. |
-| [`threshold_optimization.py`](file:///E:/RetiSpec/threshold_optimization.py) | Threshold Optimization | **Ordinal Classification Modeling** (modeling progressive DR severity stages), cumulative probability thresholding, **Quadratic Weighted Kappa** optimization via grid search, class-specific F1 threshold tuning. |
-| [`train.py`](file:///E:/RetiSpec/train.py) | Model Training | **Focal Loss** ($\gamma=2.0$) with class-frequency weighting, **Exponential Moving Average (EMA)** of weights ($\beta=0.9997$), **Mixup Augmentation** with linear decay, **Discriminative Learning Rates** (backbone $3\times 10^{-5}$ vs head $3\times 10^{-4}$), AdamW optimizer, gradient clipping. |
-| [`dataset.py`](file:///E:/RetiSpec/dataset.py) | Data Ingestion | PyTorch `Dataset` & `DataLoader`, **WeightedRandomSampler** with tempered power reweighting ($\text{power}=0.35$ to prevent over-sampling rare classes), domain-safe data augmentations, fail-fast image reading. |
-| [`evaluate.py`](file:///E:/RetiSpec/evaluate.py) | Multi-Stage Evaluation | Baseline vs TTA vs Threshold-optimized comparison, Quadratic Weighted Kappa metric, Confusion Matrix (raw counts and normalized recall), classification report. |
-| [`xai_gradcam.py`](file:///E:/RetiSpec/xai_gradcam.py) | Coarse Lesion Attention | **Grad-CAM++** (higher-order positive partial derivative weighting for multiple lesion focus), activation hook on final ConvNeXt block, JET colormap blending, circular background suppression. |
-| [`xai_gradientxinput.py`](file:///E:/RetiSpec/xai_gradientxinput.py) | Fine Pixel Saliency | **Gradient × Input** feature attribution ($\left\| x \odot \frac{\partial y_c}{\partial x} \right\|$), channel-wise sensitivity aggregation, Gaussian kernel smoothing, retinal background masking. |
-| [`export_onnx.py`](file:///E:/RetiSpec/export_onnx.py) | ONNX Export & Benchmark | PyTorch to ONNX Opset 14 export, constant folding, dynamic batch dimension, ONNX model validation, **ONNX Runtime CPU acceleration** benchmark vs PyTorch CPU. |
-| [`app.py`](file:///E:/RetiSpec/app.py) | Web API & Server | **FastAPI** application, async multipart form image ingestion, model inference (PyTorch CPU / ONNX Runtime), real-time Grad-CAM++ and Gradient × Input generation, base64 response serialization, Jinja2 template rendering. |
-| [`templates/index.html`](file:///E:/RetiSpec/templates/index.html) & [`static/`](file:///E:/RetiSpec/static/) | Frontend Interface | Drag-and-drop file upload, instant image preview, asynchronous JSON API communication, animated class probability bars, responsive side-by-side diagnostic visualization grid. |
+| **Preprocessed Input** | Ben Graham + CLAHE + Circular Crop | Standardizes illumination, removes camera artifacts, and isolates retinal tissue. |
+| **Grad-CAM++ Attention** | Higher-order feature map activation | Identifies broad spatial regions and vessel arches driving the classification. |
+| **Gradient × Input** | $\left\| x \odot \frac{\partial y_c}{\partial x} \right\|$ Sensitivity | Pinpoints exact micro-lesions, hemorrhages, and exudate boundaries at the pixel level. |
 
 ---
 
-## 🛠️ Quickstart (Local Virtual Environment)
+## 📁 Project Structure & Core Concepts
 
-### 1. Activate Virtual Environment
-```powershell
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-```
+| File | Role | Techniques & Concepts Used |
+| :--- | :--- | :--- |
+| [`app.py`](file:///e:/RetiSpec/app.py) | Web Application | FastAPI async engine, multipart image ingestion, dual XAI generation, dynamic CPU thread limiting. |
+| [`model.py`](file:///e:/RetiSpec/model.py) | Deep Learning Model | ConvNeXt-Tiny backbone, $7\times 7$ depthwise convolutions, inverted bottleneck, 2-layer classifier head. |
+| [`preprocessing.py`](file:///e:/RetiSpec/preprocessing.py) | Retinal Pipeline | **Ben Graham's method** (local average subtraction), **CLAHE** in LAB space, circular ROI auto-cropping, aspect padding. |
+| [`xai_gradcam.py`](file:///e:/RetiSpec/xai_gradcam.py) | Macro Explainability | **Grad-CAM++** with positive partial derivative weighting on the final ConvNeXt stage. |
+| [`xai_gradientxinput.py`](file:///e:/RetiSpec/xai_gradientxinput.py) | Pixel Explainability | **Gradient × Input** feature saliency, channel aggregation, Gaussian smoothing, retinal tissue masking. |
+| [`export_onnx.py`](file:///e:/RetiSpec/export_onnx.py) | Runtime Optimization | PyTorch to ONNX Opset 14 export, dynamic batching, CPU throughput benchmark. |
+| [`tta.py`](file:///e:/RetiSpec/tta.py) | Test-Time Augmentation | 6-fold anatomically safe ensemble transforms with soft-voting probability averaging. |
+| [`threshold_optimization.py`](file:///e:/RetiSpec/threshold_optimization.py) | Post-Processing | Ordinal classification modeling, Quadratic Weighted Kappa (QWK) grid optimization. |
+| [`train.py`](file:///e:/RetiSpec/train.py) & [`evaluate.py`](file:///e:/RetiSpec/evaluate.py) | Training & Validation | Focal Loss ($\gamma=2.0$), Exponential Moving Average (EMA), discriminative learning rates, QWK evaluation. |
+| [`templates/`](file:///e:/RetiSpec/templates/) & [`static/`](file:///e:/RetiSpec/static/) | Web Frontend | Modern glassmorphism UI, drag-and-drop image upload, real-time probability visualization bars. |
 
-### 2. Export / Benchmark ONNX (Optional - already pre-generated)
+---
+
+## 🛠️ Quickstart (Run Locally)
+
+Run RetiSpec on your local machine in 3 simple steps:
+
+### 1. Clone the Repository
 ```bash
-python export_onnx.py
+git clone https://github.com/dbee-4/RetiSpec.git
+cd RetiSpec
 ```
 
-### 3. Run FastAPI Web Server
+### 2. Set Up Virtual Environment & Dependencies
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate environment
+# On Windows (PowerShell):
+.\.venv\Scripts\Activate.ps1
+# On macOS / Linux:
+source .venv/bin/activate
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+### 3. Start the Server
 ```bash
 python app.py
 ```
-Open your browser at:
+
+Open your browser and navigate to:
 * **Web UI:** [http://localhost:8000](http://localhost:8000)
-* **Interactive API Docs (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
-* **Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
+* **API Documentation (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
+* **Health Endpoint:** [http://localhost:8000/health](http://localhost:8000/health)
 
 ---
 
-## 🐳 Running with Docker
+## 🐳 Optional: Run with Docker
 
-### Option A: Using Docker Compose (Recommended)
+If you prefer containerized execution:
+
 ```bash
 docker compose up --build
 ```
-
-### Option B: Using Docker CLI
-```bash
-# Build the CPU-optimized container
-docker build -t retispec:latest .
-
-# Run container on port 8000
-docker run -d -p 8000:8000 --name retispec_app retispec:latest
-```
-Access the application at `http://localhost:8000`.
+Access the application immediately at `http://localhost:8000`.
 
 ---
 
-## 🔬 Explainable AI (XAI) Methods
+## ⚖️ Disclaimer: Research & Educational Purpose Only
 
-1. **Grad-CAM++ (Attention Map):** Identifies macro spatial regions and feature activations within the ConvNeXt deep feature maps that triggered the class prediction.
-2. **Gradient × Input (Pixel Attribution):** Calculates element-wise sensitivity by multiplying input pixel intensities by backpropagated gradients w.r.t the predicted class score, highlighting specific microaneurysms, hemorrhages, and exudates.
+> **Important Notice:**
+> This software is developed strictly for **academic research, educational demonstrations, and algorithmic benchmarking**. It is **not** certified as a medical device by any healthcare regulatory body (e.g., FDA, CE, EMA). It must **not** be used as a primary diagnostic tool, clinical decision system, or treatment guidance mechanism in real-world clinical practice without independent evaluation and validation by certified medical professionals.
