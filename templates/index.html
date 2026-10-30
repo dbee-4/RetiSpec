@@ -12,7 +12,7 @@
     <header>
         <div class="logo-container">
             <h1>🔬 RetiSpec</h1>
-            <p>Automated Diabetic Retinopathy Grading & Explainability</p>
+            <p>Explainable AI based Diabetic Retinopathy Detection</p>
         </div>
     </header>
 
@@ -20,7 +20,6 @@
         <section class="card upload-card">
             <div class="card-header">
                 <h2>1. Fundus Image Upload</h2>
-                <p>Select a retinal fundus image to generate an explainable AI diagnostic report.</p>
             </div>
             
             <div class="drop-zone" id="dropZone">
@@ -33,17 +32,18 @@
                 </div>
             </div>
             
-
             <div id="previewContainer" class="hidden">
                 <img id="previewImg" class="preview-img" src="" alt="Preview">
-                <button id="analyzeBtn" class="btn btn-primary">Run Diagnostic Analysis</button>
+                <div style="display: flex; justify-content: center; align-items: center; margin-top: 15px;">
+                    <button id="analyzeBtn" class="btn btn-primary">Run Diagnostic Analysis</button>
+                </div>
             </div>
         </section>
 
         <div id="loader" class="loader hidden">
             <div class="spinner"></div>
-            <p>Processing via ConvNeXt-Tiny backbone...</p>
-            <small>Generating Grad-CAM++ heatmaps</small>
+            <p>Processing via ConvNeXt-Tiny backbone with TTA...</p>
+            <small>Generating Grad-CAM++ & Gradient × Input heatmaps</small>
         </div>
 
         <section class="card results-card hidden" id="results">
@@ -66,24 +66,24 @@
             <div class="visualization-grid">
                 <div class="vis-block">
                     <h4>Preprocessed Input</h4>
-                    <img id="origImg" src="" alt="Original">
+                    <img id="origImg" src="" alt="Preprocessed Retinal Fundus">
+                    <p class="caption">Ben Graham + CLAHE + Circular crop.</p>
                 </div>
                 <div class="vis-block">
                     <h4>Grad-CAM++ Attention</h4>
-                    <img id="camImg" src="" alt="Heatmap">
-                    <p class="caption">Hot zones indicate regions driving the classification.</p>
+                    <img id="camImg" src="" alt="Grad-CAM++ Heatmap">
+                    <p class="caption">Deep feature-level lesion attention map.</p>
                 </div>
                 <div class="vis-block">
-                    <h4>Gradient x input</h4>
-                    <img id="shapImg" src="" alt="SHAP Overlay">
-                    <p class="caption">Pixel-level feature importance.</p>
+                    <h4>Gradient × Input</h4>
+                    <img id="gradXInputImg" src="" alt="Gradient x Input Attribution">
+                    <p class="caption">Pixel-level sensitivity & feature attribution.</p>
                 </div>
             </div>
 
             <div class="prob-section">
                 <h4>Class Distribution</h4>
-                <div id="probBars">
-                    </div>
+                <div id="probBars"></div>
             </div>
 
         </section>

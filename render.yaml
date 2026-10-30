@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: retispec
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    healthCheckPath: /health
+

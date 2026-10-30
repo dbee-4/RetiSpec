@@ -55,7 +55,10 @@ function handleFile(file) {
 
 analyzeBtn.addEventListener('click', async () => {
     const file = fileInput.files[0];
-    if (!file) return;
+    if (!file) {
+        alert("Please select or drop a retinal fundus image first.");
+        return;
+    }
 
     // UI State: Loading
     analyzeBtn.disabled = true;
@@ -64,10 +67,7 @@ analyzeBtn.addEventListener('click', async () => {
 
     const formData = new FormData();
     formData.append('image', file);
-
-
-    // TTA is disabled in the UI
-    formData.append('use_tta', false);
+    formData.append('use_tta', true);
 
     try {
         const response = await fetch('/predict', {
@@ -76,7 +76,9 @@ analyzeBtn.addEventListener('click', async () => {
         });
         const data = await response.json();
 
-        if (data.error) throw new Error(data.error);
+        if (!response.ok || data.error) {
+            throw new Error(data.detail || data.error || "Inference failed");
+        }
 
         displayResults(data);
     } catch (err) {
@@ -102,18 +104,21 @@ function displayResults(data) {
     document.getElementById('resultConfidence').textContent = `${data.confidence}%`;
     document.getElementById('resultBanner').style.borderLeftColor = color;
 
-    // 2. Update Images
+    // 2. Update Explainable AI Overlays
     document.getElementById('origImg').src = `data:image/png;base64,${data.original_img}`;
     document.getElementById('camImg').src = `data:image/png;base64,${data.gradcam_img}`;
-    if (document.getElementById('shapImg') && data.shap_img) {
-        document.getElementById('shapImg').src = `data:image/png;base64,${data.shap_img}`;
+    
+    // Support both new gradient_input_img and backwards-compatible shap_img
+    const gradXInputElem = document.getElementById('gradXInputImg') || document.getElementById('shapImg');
+    const gradXInputData = data.gradient_input_img || data.shap_img;
+    if (gradXInputElem && gradXInputData) {
+        gradXInputElem.src = `data:image/png;base64,${gradXInputData}`;
     }
 
-    // 3. Update Probability Bars
+    // 3. Update Probability Distribution Bars
     const probContainer = document.getElementById('probBars');
     probContainer.innerHTML = ''; // Clear old bars
 
-    // Sort entries to show highest probability first or maintain logical order
     Object.entries(data.all_probs).forEach(([label, value]) => {
         const barHtml = `
             <div class="prob-item">
@@ -122,18 +127,20 @@ function displayResults(data) {
                     <span>${value}%</span>
                 </div>
                 <div class="prob-bar-bg">
-                    <div class="prob-bar-fill" style="width: 0%; background-color: ${SEVERITY_COLORS[label]}"></div>
+                    <div class="prob-bar-fill" style="width: 0%; background-color: ${SEVERITY_COLORS[label] || '#3b82f6'}"></div>
                 </div>
             </div>
         `;
         probContainer.insertAdjacentHTML('beforeend', barHtml);
     });
 
-    // Trigger bar animation after a short delay
+    // Trigger bar animation after short rendering delay
     setTimeout(() => {
         const fills = document.querySelectorAll('.prob-bar-fill');
         Object.values(data.all_probs).forEach((value, idx) => {
-            fills[idx].style.width = `${value}%`;
+            if (fills[idx]) {
+                fills[idx].style.width = `${value}%`;
+            }
         });
     }, 100);
 

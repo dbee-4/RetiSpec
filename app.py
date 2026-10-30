@@ -1,33 +1,58 @@
+"""
+RetiSpec - FastAPI Web Application
+High-performance, async-ready API for Diabetic Retinopathy classification
+and Explainable AI (Grad-CAM++ and Gradient x Input).
+"""
 import os
 import io
-import sys
 import cv2
 import base64
-import torch
 import pickle
-from tta import TTAPredictor
 import numpy as np
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 from PIL import Image
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
-from pytorch_grad_cam import GradCAMPlusPlus
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-from pytorch_grad_cam.utils.image import show_cam_on_image
-from preprocessing import preprocess_for_model, preprocess_for_tta
+from typing import Optional
 
+import torch
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 
-# Ensure the app can find the 'src' directory
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config as cfg
 from model import build_model
+from tta import TTAPredictor
+from preprocessing import preprocess_for_model, preprocess_for_tta
+from xai_gradcam import create_gradcam_engine, compute_gradcam
+from xai_gradientxinput import compute_gradient_x_input
 
+# ── App Initialization ────────────────────────────────────────────────────────
+app = FastAPI(
+    title="RetiSpec API",
+    description="Explainable AI-Based Diabetic Retinopathy Detection System",
+    version="2.0.0"
+)
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-CORS(app)
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ── Metadata ──────────────────────────────────────────────────────────────────
+# Mount Static Files & Templates
+BASE_DIR = cfg.BASE_DIR
+static_dir = os.path.join(BASE_DIR, "static")
+templates_dir = os.path.join(BASE_DIR, "templates")
+
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+templates = Jinja2Templates(directory=templates_dir)
+
+# ── Clinical Metadata ─────────────────────────────────────────────────────────
 LABEL_NAMES = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
 SEVERITY_DESC = [
     "No visible diabetic retinopathy.",
@@ -37,142 +62,168 @@ SEVERITY_DESC = [
     "Advanced stage with growth of new, fragile blood vessels."
 ]
 
-# ── Model & XAI Setup ─────────────────────────────────────────────────────────
+# ── Model & XAI State ─────────────────────────────────────────────────────────
 device = cfg.DEVICE
-model = build_model()
-checkpoint = torch.load(cfg.BEST_MODEL_PATH, map_location=device)
-model.load_state_dict(checkpoint["model_state"])
-model.eval()
+print(f"[RetiSpec] Initializing on compute device: {device}")
 
-# Hook into the target layer for real-time Grad-CAM++
-# Targeting the entire block ensures we get the [B, C, H, W] output format instead of the [B, H, W, C] norm output.
-target_layers = [model.backbone.stages[-1].blocks[-1]]
-cam_engine = GradCAMPlusPlus(model=model, target_layers=target_layers)
-
-
-# Load optimized thresholds if available
-threshold_path = os.path.join(cfg.MODEL_DIR, "optimized_thresholds.pkl")
-if os.path.exists(threshold_path):
-    with open(threshold_path, 'rb') as f:
-        OPTIMIZED_THRESHOLDS = pickle.load(f)
-    print(f"ℹ️ Loaded optimized thresholds (not used in Flask softmax inference): {OPTIMIZED_THRESHOLDS}")
+# 1. PyTorch Model Initialization
+pytorch_model = build_model(pretrained=False, device=device)
+if os.path.exists(cfg.BEST_MODEL_PATH):
+    checkpoint = torch.load(cfg.BEST_MODEL_PATH, map_location=device)
+    state_dict = checkpoint.get("ema_state", checkpoint.get("model_state", checkpoint))
+    pytorch_model.load_state_dict(state_dict)
+    print(f"[RetiSpec] Loaded PyTorch model from {cfg.BEST_MODEL_PATH}")
 else:
-    OPTIMIZED_THRESHOLDS = None
-    print("⚠️  No optimized thresholds found. Using default (argmax).")
+    print(f"[RetiSpec] Warning: Checkpoint not found at {cfg.BEST_MODEL_PATH}")
+pytorch_model.eval()
 
-# Initialize TTA predictor
-tta_predictor = TTAPredictor(model)
+# 2. XAI Engines
+cam_engine = create_gradcam_engine(pytorch_model)
+tta_predictor = TTAPredictor(pytorch_model, device=device)
 
-# SHAP explainer removed due to Numba DLL Application Control block
-# We will use native PyTorch Gradient * Input to calculate pixel-level feature importance instead.
+# 3. ONNX Runtime Engine (Optional Acceleration)
+onnx_session = None
+if os.path.exists(cfg.ONNX_MODEL_PATH):
+    try:
+        import onnxruntime as ort
+        sess_opts = ort.SessionOptions()
+        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        onnx_session = ort.InferenceSession(cfg.ONNX_MODEL_PATH, sess_opts, providers=["CPUExecutionProvider"])
+        print(f"[RetiSpec] Loaded ONNX Runtime engine from {cfg.ONNX_MODEL_PATH}")
+    except Exception as e:
+        print(f"[RetiSpec] ONNX Runtime could not be initialized: {e}")
+
+# 4. Optimized Thresholds
+OPTIMIZED_THRESHOLDS = None
+if os.path.exists(cfg.THRESHOLDS_PATH):
+    try:
+        with open(cfg.THRESHOLDS_PATH, "rb") as f:
+            OPTIMIZED_THRESHOLDS = pickle.load(f)
+        print(f"[RetiSpec] Loaded optimized decision thresholds: {OPTIMIZED_THRESHOLDS}")
+    except Exception as e:
+        print(f"[RetiSpec] Failed loading thresholds: {e}")
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-
-def tensor_to_base64(img_array):
-    """Converts a numpy image array to a base64 string for the browser."""
-    img_array = (img_array * 255).astype(np.uint8)
+def numpy_to_base64_png(img_array: np.ndarray) -> str:
+    """Converts a numpy image array (float 0-1 or uint8 0-255) to a base64 string."""
+    if img_array.dtype != np.uint8:
+        if img_array.max() > 1.0:
+            img_array = np.clip(img_array, 0, 255).astype(np.uint8)
+        else:
+            img_array = (np.clip(img_array, 0, 1) * 255).astype(np.uint8)
     img_pil = Image.fromarray(img_array)
     buff = io.BytesIO()
     img_pil.save(buff, format="PNG")
     return base64.b64encode(buff.getvalue()).decode("utf-8")
 
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    """Serve the web UI frontend."""
+    return templates.TemplateResponse(request=request, name="index.html")
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    if "image" not in request.files:
-        return jsonify({"error": "No image provided"}), 400
 
-    file = request.files["image"]
-    use_tta = request.form.get("use_tta", "false").lower() == "true"
-    
-    pil_img = Image.open(io.BytesIO(file.read()))
-    img_np = np.array(pil_img.convert("RGB"))
-    input_tensor, vis_img = preprocess_for_model(pil_img)
-     
-     
+@app.get("/health")
+async def health_check():
+    """System health and runtime status check."""
+    return {
+        "status": "healthy",
+        "framework": "FastAPI",
+        "device": str(device),
+        "pytorch_model_loaded": pytorch_model is not None,
+        "onnx_model_available": onnx_session is not None,
+        "xai_methods": ["Grad-CAM++", "Gradient x Input"],
+        "num_classes": cfg.NUM_CLASSES
+    }
+
+
+@app.post("/predict")
+async def predict(
+    image: UploadFile = File(...),
+    use_tta: bool = Form(True),
+    prefer_onnx: bool = Form(False)
+):
+    """
+    Diagnostic inference endpoint:
+    - Preprocesses uploaded fundus image (Ben Graham, CLAHE, Circular Crop)
+    - Performs DR classification (PyTorch or ONNX Runtime, with optional TTA)
+    - Computes dual Explainable AI visualizations: Grad-CAM++ and Gradient x Input
+    """
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a valid image")
+
+    try:
+        contents = await image.read()
+        pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to decode image: {str(e)}")
+
+    # 1. Preprocessing for model inference & visualization
+    input_tensor, vis_img = preprocess_for_model(pil_img, device=device)
+
+    # 2. Inference
+    engine_used = "PyTorch CPU" if not torch.cuda.is_available() else "PyTorch CUDA"
+
     if use_tta:
-        # TTA prediction (requires preprocessed numpy image)
+        # Test-Time Augmentation (6 variants)
         img_preprocessed = preprocess_for_tta(pil_img)
-        avg_probs, _, _ = tta_predictor.predict_with_tta(img_preprocessed, num_augments=6)
-        pred_idx = int(np.argmax(avg_probs))
+        avg_probs, pred_idx, _ = tta_predictor.predict_with_tta(img_preprocessed, num_augments=6)
         conf = float(avg_probs[pred_idx])
-
+        engine_used += " + TTA"
+    elif prefer_onnx and onnx_session is not None:
+        # Fast ONNX Runtime forward pass
+        ort_inputs = {"input": input_tensor.cpu().numpy()}
+        logits = onnx_session.run(None, ort_inputs)[0]
+        probs = torch.softmax(torch.from_numpy(logits), dim=1)[0].numpy()
+        pred_idx = int(np.argmax(probs))
+        conf = float(probs[pred_idx])
+        avg_probs = probs
+        engine_used = "ONNX Runtime CPU"
     else:
-        # Standard prediction
+        # Standard PyTorch forward pass
         with torch.no_grad():
-            logits = model(input_tensor)
-            probs = torch.softmax(logits, dim=1)[0]
-            
-            avg_probs = probs.cpu().numpy()
-            pred_idx = int(np.argmax(avg_probs))
-            conf = float(avg_probs[pred_idx])
-    
-    # Generate Grad-CAM (input_tensor and vis_img are already preprocessed by preprocess_for_model)
-    targets = [ClassifierOutputTarget(pred_idx)]
-    grayscale_cam = cam_engine(input_tensor=input_tensor, targets=targets)[0, :]
-    cam_image = show_cam_on_image(vis_img, grayscale_cam, use_rgb=True)
-    
-    # Generate Pixel-Level Feature Importance (Native PyTorch Gradient * Input)
-    # This mathematically approximates SHAP without requiring the blocked 'numba' DLL
-    input_tensor.requires_grad_(True)
-    output = model(input_tensor)
-    score = output[0, pred_idx]
-    
-    # Clear any previous gradients and compute new ones
-    model.zero_grad()
-    score.backward()
-    
-    gradients = input_tensor.grad.data.cpu().numpy()[0]
-    inputs_np = input_tensor.data.cpu().numpy()[0]
-    
-    # Gradient * Input (Sensitivity magnitude)
-    grad_times_input = np.abs(gradients * inputs_np)
-    shap_for_pred = np.transpose(grad_times_input, (1, 2, 0))
-    shap_magnitude = shap_for_pred.sum(axis=2)
-    
-    # Smooth the SHAP heatmap to reduce pixel noise and make it more understandable
-    shap_magnitude = cv2.GaussianBlur(shap_magnitude, (21, 21), 0)
-    
-    shap_norm = (shap_magnitude - shap_magnitude.min()) / (shap_magnitude.max() - shap_magnitude.min() + 1e-8)
-    shap_heatmap = cv2.applyColorMap((shap_norm * 255).astype(np.uint8), cv2.COLORMAP_JET)
-    shap_heatmap = cv2.cvtColor(shap_heatmap, cv2.COLOR_BGR2RGB) / 255.0
-    shap_overlay = 0.6 * vis_img + 0.4 * shap_heatmap
-    shap_overlay = np.clip(shap_overlay, 0, 1)
-    
-    # Mask out the background (black pixels in the preprocessed image)
-    # This prevents the heatmap from coloring the padding outside the retina
-    mask = (vis_img.sum(axis=2) > 0.05).astype(np.float32)[..., np.newaxis]
-    cam_image = cam_image * mask
-    shap_overlay = shap_overlay * mask
-    
-    # English Explanation
+            logits = pytorch_model(input_tensor)
+            probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+            pred_idx = int(np.argmax(probs))
+            conf = float(probs[pred_idx])
+            avg_probs = probs
+
+    # 3. Explainable AI Visualizations (Two forms only: Grad-CAM++ & Gradient x Input)
+    # Form 1: Grad-CAM++ (Attention on final ConvNeXt feature map)
+    cam_overlay = compute_gradcam(cam_engine, input_tensor, pred_idx, vis_img)
+
+    # Form 2: Gradient x Input (Pixel-level sensitivity attribution)
+    grad_x_input_overlay = compute_gradient_x_input(pytorch_model, input_tensor, pred_idx, vis_img)
+
+    # 4. Clinical Natural-Language Explanation
     if pred_idx == 0:
         explanation = "This person is not affected by diabetic retinopathy."
     else:
-        explanation = f"This person is affected by {LABEL_NAMES[pred_idx].lower()} diabetic retinopathy. The highlighted regions in the heatmaps indicate the specific areas affecting them."
+        explanation = (
+            f"This person is affected by {LABEL_NAMES[pred_idx].lower()} diabetic retinopathy. "
+            f"The highlighted regions in the heatmaps indicate the specific microvascular lesions driving the diagnosis."
+        )
 
-    return jsonify({
+    return JSONResponse({
         "prediction": LABEL_NAMES[pred_idx],
         "description": SEVERITY_DESC[pred_idx],
         "explanation": explanation,
         "confidence": round(conf * 100, 2),
-        "gradcam_img": tensor_to_base64(cam_image),
-        "shap_img": tensor_to_base64(shap_overlay),
-        "original_img": tensor_to_base64(vis_img),
-        "all_probs": {LABEL_NAMES[i]: round(avg_probs[i] * 100, 2) for i in range(5)},
-        "used_tta": use_tta
+        "gradcam_img": numpy_to_base64_png(cam_overlay),
+        "gradient_input_img": numpy_to_base64_png(grad_x_input_overlay),
+        "shap_img": numpy_to_base64_png(grad_x_input_overlay),  # Backwards compatibility alias
+        "original_img": numpy_to_base64_png(vis_img),
+        "all_probs": {LABEL_NAMES[i]: round(float(avg_probs[i]) * 100, 2) for i in range(5)},
+        "used_tta": use_tta,
+        "engine": engine_used
     })
 
 
-
-
-
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
