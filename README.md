@@ -101,17 +101,4 @@ python app.py
 
 ---
 
-## ☁️ Deploy to Streamlit Community Cloud (100% Free)
-
-You can host this application online for free in 3 clicks with **Streamlit Community Cloud**:
-
-1. Go to [share.streamlit.io](https://share.streamlit.io/) and sign in with your GitHub account.
-2. Click **"New app"** and select:
-   * **Repository:** `dbee-4/RetiSpec`
-   * **Branch:** `main`
-   * **Main file path:** `streamlit_app.py`
-3. Click **"Deploy!"** — Streamlit Cloud automatically provisions 1GB+ RAM and gives you a permanent public URL (e.g., `https://retispec.streamlit.app`).
-
----
-
 ## 📌 Research & Educational Purpose Only
