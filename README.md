@@ -2,6 +2,7 @@
 ### Explainable AI-Based Diabetic Retinopathy Detection System
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![PyTorch](https://img.shields.io/badge/Framework-PyTorch%20CPU-EE4C2C.svg)](https://pytorch.org/)
 [![ONNX Runtime](https://img.shields.io/badge/Inference-ONNX%20Runtime%20(<100ms)-005CED.svg)](https://onnxruntime.ai/)
@@ -19,10 +20,11 @@
   1. **Grad-CAM++:** Highlights macro lesion clusters and diseased regions across deep feature maps.
   2. **Gradient × Input:** Fine-grained pixel-level attribution mapping subtle microaneurysms, cotton wool spots, and hemorrhages.
 * **Production Engineering:**
+  * **Interactive Streamlit Web Dashboard:** Clean, intuitive UI with built-in sample selector, real-time prediction distribution, and side-by-side heatmaps.
   * **FastAPI Backend:** Asynchronous REST API serving web UI and OpenAPI docs (`/docs`).
   * **ONNX Runtime Acceleration:** Pre-converted ONNX model (`models/best_model.onnx`) cuts CPU inference latency from **~196 ms down to ~95 ms** (>2× speedup).
   * **Automated TTA:** 6-fold Test-Time Augmentation (safe horizontal flips, micro-rotations, and brightness jitter) runs on every image for robust, invariant predictions.
-  * **Zero Cloud GPU Requirement:** Fully optimized to run locally on standard CPU hardware or inside Docker.
+  * **Zero Cloud GPU Requirement:** Fully optimized to run on standard CPU hardware.
 
 ---
 
@@ -48,7 +50,8 @@ Fundus Image ──► Preprocessing ──► ConvNeXt-Tiny + TTA ──► Dua
 
 | File | Role | Techniques & Concepts Used |
 | :--- | :--- | :--- |
-| [`app.py`](file:///e:/RetiSpec/app.py) | Web Application | FastAPI async engine, multipart image ingestion, dual XAI generation, dynamic CPU thread limiting. |
+| [`streamlit_app.py`](file:///e:/RetiSpec/streamlit_app.py) | Cloud & Local Frontend | Streamlit application, sample selector, cached inference engines, reactive diagnostic report cards. |
+| [`app.py`](file:///e:/RetiSpec/app.py) | REST API Server | FastAPI async engine, multipart image ingestion, dual XAI generation, dynamic CPU thread limiting. |
 | [`model.py`](file:///e:/RetiSpec/model.py) | Deep Learning Model | ConvNeXt-Tiny backbone, $7\times 7$ depthwise convolutions, inverted bottleneck, 2-layer classifier head. |
 | [`preprocessing.py`](file:///e:/RetiSpec/preprocessing.py) | Retinal Pipeline | **Ben Graham's method** (local average subtraction), **CLAHE** in LAB space, circular ROI auto-cropping, aspect padding. |
 | [`xai_gradcam.py`](file:///e:/RetiSpec/xai_gradcam.py) | Macro Explainability | **Grad-CAM++** with positive partial derivative weighting on the final ConvNeXt stage. |
@@ -57,22 +60,17 @@ Fundus Image ──► Preprocessing ──► ConvNeXt-Tiny + TTA ──► Dua
 | [`tta.py`](file:///e:/RetiSpec/tta.py) | Test-Time Augmentation | 6-fold anatomically safe ensemble transforms with soft-voting probability averaging. |
 | [`threshold_optimization.py`](file:///e:/RetiSpec/threshold_optimization.py) | Post-Processing | Ordinal classification modeling, Quadratic Weighted Kappa (QWK) grid optimization. |
 | [`train.py`](file:///e:/RetiSpec/train.py) & [`evaluate.py`](file:///e:/RetiSpec/evaluate.py) | Training & Validation | Focal Loss ($\gamma=2.0$), Exponential Moving Average (EMA), discriminative learning rates, QWK evaluation. |
-| [`templates/`](file:///e:/RetiSpec/templates/) & [`static/`](file:///e:/RetiSpec/static/) | Web Frontend | Modern glassmorphism UI, drag-and-drop image upload, real-time probability visualization bars. |
+| [`templates/`](file:///e:/RetiSpec/templates/) & [`static/`](file:///e:/RetiSpec/static/) | Classic Web Interface | Dark glassmorphism UI, drag-and-drop image upload, real-time probability visualization bars. |
 
 ---
 
 ## 🛠️ Quickstart (Run Locally)
 
-Run RetiSpec on your local machine in 3 simple steps:
-
-### 1. Clone the Repository
+### 1. Clone Repository & Setup Environment
 ```bash
 git clone https://github.com/dbee-4/RetiSpec.git
 cd RetiSpec
-```
 
-### 2. Set Up Virtual Environment & Dependencies
-```bash
 # Create virtual environment
 python -m venv .venv
 
@@ -86,26 +84,33 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Start the Server
+### 2. Launch the Web Application
+
+#### Option A: Streamlit Interface (Recommended)
+```bash
+streamlit run streamlit_app.py
+```
+* **URL:** [http://localhost:8501](http://localhost:8501)
+
+#### Option B: FastAPI Backend & Glassmorphism UI
 ```bash
 python app.py
 ```
-
-Open your browser and navigate to:
 * **Web UI:** [http://localhost:8000](http://localhost:8000)
-* **API Documentation (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
-* **Health Endpoint:** [http://localhost:8000/health](http://localhost:8000/health)
+* **Interactive API Docs (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
-## 🐳 Optional: Run with Docker
+## ☁️ Deploy to Streamlit Community Cloud (100% Free)
 
-If you prefer containerized execution:
+You can host this application online for free in 3 clicks with **Streamlit Community Cloud**:
 
-```bash
-docker compose up --build
-```
-Access the application immediately at `http://localhost:8000`.
+1. Go to [share.streamlit.io](https://share.streamlit.io/) and sign in with your GitHub account.
+2. Click **"New app"** and select:
+   * **Repository:** `dbee-4/RetiSpec`
+   * **Branch:** `main`
+   * **Main file path:** `streamlit_app.py`
+3. Click **"Deploy!"** — Streamlit Cloud automatically provisions 1GB+ RAM and gives you a permanent public URL (e.g., `https://retispec.streamlit.app`).
 
 ---
 
