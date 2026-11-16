@@ -174,10 +174,6 @@ with st.sidebar:
         help="Upload standard digital retinal fundus photograph."
     )
 
-    st.markdown("---")
-    st.markdown("**Pipeline Configuration**")
-    st.info("⚙️ **Inference**: ConvNeXt-Tiny\n\n🛡️ **TTA**: 6-Fold Ensemble (Always Active)\n\n🔬 **XAI**: Grad-CAM++ & Gradient × Input")
-
 
 # ── Resolve Input Image ───────────────────────────────────────────────────────
 pil_img = None
@@ -301,6 +297,5 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-# ── Footer ───────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: #64748b; font-size: 0.85rem;'>📌 Research & Educational Purpose Only</div>", unsafe_allow_html=True)
+
+
